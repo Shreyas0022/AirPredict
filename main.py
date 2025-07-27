@@ -2,18 +2,42 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
-# Initialize MediaPipe Hands
+# --- Global Initializations ---
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.8, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
-
-# Initialize the webcam
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-# NEW: A list to store the points of our drawing line
-points = []
+# --- NEW: Refactored Gesture Detection Function (with SWAPPED logic) ---
+def get_gesture_mode(hand_landmarks):
+    """
+    Analyzes hand landmarks to determine the current gesture mode.
+    Args:
+        hand_landmarks: The detected landmarks for a single hand.
+    Returns:
+        A string: "DRAW", "MOVE", or "NONE".
+    """
+    # Get landmarks for index and middle fingers
+    index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+    middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+    index_pip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
+    middle_pip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_PIP]
 
-# NEW: A variable for our drawing canvas
+    # Check if fingers are raised
+    index_finger_up = index_tip.y < index_pip.y
+    middle_finger_up = middle_tip.y < middle_pip.y
+
+    # --- SWAPPED LOGIC ---
+    # We must check for the more specific gesture (two fingers) FIRST.
+    if index_finger_up and middle_finger_up:
+        return "MOVE"  # Two fingers up is now MOVE mode
+    elif index_finger_up:
+        return "DRAW"  # One finger up is now DRAW mode
+    else:
+        return "NONE"
+
+# --- Main Application Loop ---
+points = []
 canvas = None
 
 while True:
@@ -21,51 +45,45 @@ while True:
     if not ret:
         break
 
-    # Flip the frame horizontally for a mirror-like view
     frame = cv2.flip(frame, 1)
 
-    # NEW: Initialize the canvas on the first frame
     if canvas is None:
         canvas = np.zeros_like(frame)
 
-    # Convert the BGR image to RGB for MediaPipe
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    # Process the RGB frame to find hands
     results = hands.process(rgb_frame)
 
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
-            # Get the frame dimensions
             height, width, _ = frame.shape
             
-            # Access the specific landmark for the index fingertip
-            index_fingertip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            mode = get_gesture_mode(hand_landmarks)
             
-            # Convert normalized coordinates to pixel coordinates
-            cx, cy = int(index_fingertip.x * width), int(index_fingertip.y * height)
+            index_tip_landmark = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            cx, cy = int(index_tip_landmark.x * width), int(index_tip_landmark.y * height)
+
+            if mode == "DRAW":
+                cv2.circle(frame, (cx, cy), 12, (0, 255, 0), cv2.FILLED)
+                points.append((cx, cy))
+                if len(points) > 1:
+                    cv2.line(canvas, points[-2], points[-1], (0, 255, 0), 5)
+
+            elif mode == "MOVE":
+                cv2.circle(frame, (cx, cy), 12, (255, 0, 0), cv2.FILLED)
+                points.clear()
             
-            # Draw a circle on the index fingertip to show the "pen"
-            cv2.circle(frame, (cx, cy), 10, (0, 0, 255), cv2.FILLED)
+            else:
+                points.clear()
 
-            # NEW: Add the current point to our list of points
-            points.append((cx, cy))
-
-            # NEW: Draw lines on the canvas if we have at least two points
-            if len(points) > 1:
-                # Draw a line from the previous point to the current point
-                cv2.line(canvas, points[-2], points[-1], (0, 255, 0), 5) # Green line, 5px thick
-
-    # NEW: Combine the live frame with our canvas
-    # This overlays the drawing onto the video
-    # We use cv2.add to merge them.
     frame = cv2.add(frame, canvas)
+    cv2.imshow('AirPredict - Gestures Swapped', frame)
 
-    # Display the resulting frame
-    cv2.imshow('AirPredict - Drawing Canvas', frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
         break
+    elif key == ord('c'):
+        canvas = np.zeros_like(frame)
+        points.clear()
 
 cap.release()
 cv2.destroyAllWindows()
