@@ -1,57 +1,72 @@
 import cv2
 import numpy as np
-import mediapipe as mp # NEW: Import MediaPipe
+import mediapipe as mp
 
-# NEW: Initialize MediaPipe Hands
+# Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+hands = mp_hands.Hands(min_detection_confidence=0.8, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
-# Initialize the webcam, explicitly telling it to use the DirectShow backend.
+# Initialize the webcam
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-# Check if the webcam is opened correctly
-if not cap.isOpened():
-    raise IOError("Cannot open webcam")
+# NEW: A list to store the points of our drawing line
+points = []
+
+# NEW: A variable for our drawing canvas
+canvas = None
 
 while True:
-    # Read a frame from the webcam
     ret, frame = cap.read()
-
-    # If the frame was read correctly, ret is True
     if not ret:
-        print("Can't receive frame (stream end?). Exiting ...")
         break
 
-    # Flip the frame horizontally for a more intuitive, mirror-like view
+    # Flip the frame horizontally for a mirror-like view
     frame = cv2.flip(frame, 1)
 
-    # NEW: Process the frame with MediaPipe
-    # Convert the BGR image to RGB, as MediaPipe requires RGB images
+    # NEW: Initialize the canvas on the first frame
+    if canvas is None:
+        canvas = np.zeros_like(frame)
+
+    # Convert the BGR image to RGB for MediaPipe
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # Process the RGB frame to find hands
     results = hands.process(rgb_frame)
 
-    # NEW: Draw the hand annotations on the frame
     if results.multi_hand_landmarks:
-        # Loop through each detected hand
         for hand_landmarks in results.multi_hand_landmarks:
-            # Use MediaPipe's drawing utility to draw the landmarks and connections
-            mp_drawing.draw_landmarks(
-                frame,                  # The frame to draw on
-                hand_landmarks,         # The detected hand landmarks
-                mp_hands.HAND_CONNECTIONS # The connections between landmarks
-            )
+            # Get the frame dimensions
+            height, width, _ = frame.shape
+            
+            # Access the specific landmark for the index fingertip
+            index_fingertip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            
+            # Convert normalized coordinates to pixel coordinates
+            cx, cy = int(index_fingertip.x * width), int(index_fingertip.y * height)
+            
+            # Draw a circle on the index fingertip to show the "pen"
+            cv2.circle(frame, (cx, cy), 10, (0, 0, 255), cv2.FILLED)
 
-    # Display the resulting frame in a window
-    cv2.imshow('AirPredict - Hand Tracking', frame)
+            # NEW: Add the current point to our list of points
+            points.append((cx, cy))
 
-    # Wait for 1ms and check if the 'q' key is pressed to exit
+            # NEW: Draw lines on the canvas if we have at least two points
+            if len(points) > 1:
+                # Draw a line from the previous point to the current point
+                cv2.line(canvas, points[-2], points[-1], (0, 255, 0), 5) # Green line, 5px thick
+
+    # NEW: Combine the live frame with our canvas
+    # This overlays the drawing onto the video
+    # We use cv2.add to merge them.
+    frame = cv2.add(frame, canvas)
+
+    # Display the resulting frame
+    cv2.imshow('AirPredict - Drawing Canvas', frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# When everything is done, release the capture and destroy all windows
 cap.release()
 cv2.destroyAllWindows()
-hands.close() # NEW: Release the MediaPipe hands resources
+hands.close()
