@@ -1,4 +1,4 @@
-# --- air_predict_app.py (Final, Fully Commented Version) ---
+# --- air_predict_app.py
 
 import tkinter as tk
 from tkinter import Canvas, Label, Button, Frame
@@ -478,3 +478,4 @@ if __name__ == "__main__":
         
     root.protocol("WM_DELETE_WINDOW", on_standalone_close)
     root.mainloop()
+
